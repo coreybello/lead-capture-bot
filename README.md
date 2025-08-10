@@ -1,45 +1,44 @@
-Lead Capture & Instant Response Bot (Agentic Workflow)
-LLM-powered FastAPI service that replies to new inquiries in seconds, answers FAQs in your brand tone, inserts a booking link, and logs an audit trail to Postgres. Owner gets email/SMS alerts. Ships as a small Docker stack.
+# Lead Capture & Instant Response Bot (Agentic Workflow)
 
-✨ Features (MVP)
-Intake: HTTP webhook or Gmail/IMAP poller
+LLM-powered **FastAPI** service that replies to new inquiries in seconds, answers FAQs in your **brand tone**, inserts a **booking link**, and logs an **audit trail** to Postgres. Owner gets **email/SMS alerts**. Ships as a small Docker stack.
 
-Brains: LLM reply using your top 10 FAQs + tone + safe fallback
+---
 
-Conversion: Auto-insert Calendly or Google Appointment link
+## ✨ Features (MVP)
 
-Delivery: Email via SendGrid, owner SMS via Twilio
+* **Intake:** HTTP **webhook** or **Gmail/IMAP poller**
+* **Brains:** LLM reply using your **top 10 FAQs** + tone + safe fallback
+* **Conversion:** Auto-insert **Calendly** or **Google Appointment** link
+* **Delivery:** Email via **SendGrid**, owner SMS via **Twilio**
+* **Reliability:** **Celery + Redis** for async send/retries; dedupe & idempotency
+* **Observability:** Full **audit logs** in Postgres; `/healthz`, `/readyz`, `/metrics`
+* **Tuning:** 14-day tweak window for FAQs, tone, and templates (no redeploy)
 
-Reliability: Celery + Redis for async send/retries; dedupe & idempotency
+**Stack:** Python, FastAPI, Postgres, Celery, Redis, OpenAI API, SendGrid, Twilio, Docker
 
-Observability: Full audit logs in Postgres; /healthz, /readyz, /metrics
+---
 
-Tuning: 14-day tweak window for FAQs, tone, and templates (no redeploy)
+## 🚀 Quick Start (5 minutes)
 
-Stack: Python, FastAPI, Postgres, Celery, Redis, OpenAI API, SendGrid, Twilio, Docker
+1. **Clone & env**
 
-🚀 Quick Start (5 minutes)
-Clone & env
-
-bash
-Copy
-Edit
+```bash
 git clone https://github.com/your-org/lead-capture-instant-response-bot.git
 cd lead-capture-instant-response-bot
 cp .env.example .env          # fill in keys below
-Bring it up
+```
 
-bash
-Copy
-Edit
+2. **Bring it up**
+
+```bash
 docker compose up -d --build
 # First run DB migrations (inside the api container)
 docker compose exec api alembic upgrade head
-Smoke test
+```
 
-bash
-Copy
-Edit
+3. **Smoke test**
+
+```bash
 # Health
 curl -s http://localhost:8000/healthz
 
@@ -53,15 +52,18 @@ curl -X POST http://localhost:8000/v1/intake/webhook \
     "subject":"Do you integrate with HubSpot?",
     "message":"Curious about price and timeline."
   }'
-Open docs
-Visit http://localhost:8000/docs (Swagger UI)
+```
 
-⚙️ Configuration
-Create a .env with at least:
+4. **Open docs**
+   Visit **[http://localhost:8000/docs](http://localhost:8000/docs)** (Swagger UI)
 
-env
-Copy
-Edit
+---
+
+## ⚙️ Configuration
+
+Create a `.env` with at least:
+
+```env
 # Core
 DB_URL=postgresql+psycopg://postgres:postgres@db:5432/leadbot
 REDIS_URL=redis://redis:6379/0
@@ -98,10 +100,13 @@ IMAP_PASSWORD=app-specific-password
 DEDUPE_WINDOW_MIN=10
 QUIET_HOURS=22:00-07:00             # owner SMS quiet hours (optional)
 LOG_LEVEL=INFO
-🧱 Docker Compose (starter)
-yaml
-Copy
-Edit
+```
+
+---
+
+## 🧱 Docker Compose (starter)
+
+```yaml
 services:
   api:
     build: .
@@ -132,115 +137,134 @@ services:
     ports: [ "6379:6379" ]
 volumes:
   pgdata:
-First run only: docker compose exec api alembic upgrade head
+```
 
-📡 API Endpoints (MVP)
-POST /v1/intake/webhook — receive new lead
-Body: {event_id, email, first_name?, last_name?, subject?, message, metadata?}
-Auth: Authorization: Bearer <ADMIN_BEARER_TOKEN>
+> First run only: `docker compose exec api alembic upgrade head`
 
-GET /healthz — liveness checks DB/Redis/queue
+---
 
-GET /readyz — readiness (migrations applied)
+## 📡 API Endpoints (MVP)
 
-GET /metrics — Prometheus counters/histograms
+* `POST /v1/intake/webhook` — receive new lead
+  **Body:** `{event_id, email, first_name?, last_name?, subject?, message, metadata?}`
+  **Auth:** `Authorization: Bearer <ADMIN_BEARER_TOKEN>`
 
-Admin (secured):
+* `GET /healthz` — liveness checks DB/Redis/queue
 
-GET/PUT /v1/admin/settings (booking link, thresholds, quiet hours)
+* `GET /readyz` — readiness (migrations applied)
 
-GET/POST/PUT/DELETE /v1/admin/faqs
+* `GET /metrics` — Prometheus counters/histograms
 
-GET/PUT /v1/admin/tone
+* **Admin (secured):**
 
-GET/POST /v1/admin/templates
+  * `GET/PUT /v1/admin/settings` (booking link, thresholds, quiet hours)
+  * `GET/POST/PUT/DELETE /v1/admin/faqs`
+  * `GET/PUT /v1/admin/tone`
+  * `GET/POST /v1/admin/templates`
+  * `POST /v1/admin/rollback` (config version)
 
-POST /v1/admin/rollback (config version)
+**API docs:** OpenAPI/Swagger at `/docs`
 
-API docs: OpenAPI/Swagger at /docs
+---
 
-🧠 Reply Logic (high level)
-Intake (webhook or poller) → normalize → idempotency check
+## 🧠 Reply Logic (high level)
 
-Dedupe within window (thread & body fingerprint)
+1. Intake (webhook or poller) → normalize → idempotency check
+2. Dedupe within window (thread & body fingerprint)
+3. Retrieve top-k FAQ snippets (pgvector or in-memory)
+4. LLM generate concise, **on-brand** answer with **booking CTA**
+5. Render Jinja template → send via SendGrid
+6. Owner alert via Twilio SMS + email
+7. Persist full audit trail (payloads, prompt, response, receipts)
 
-Retrieve top-k FAQ snippets (pgvector or in-memory)
+**Guardrails:** low temperature, snippet-only policy, safe fallback (“book a call”) if uncertain.
 
-LLM generate concise, on-brand answer with booking CTA
+---
 
-Render Jinja template → send via SendGrid
+## 🗃️ Data Model (simplified)
 
-Owner alert via Twilio SMS + email
+* `leads` (email, names, source)
+* `threads` (subject, external thread id)
+* `messages` (IN/OUT, body\_text/html, provider ids)
+* `outbound` (channel, status, attempts, receipts, latency)
+* `events` (dedupe, errors, decisions; jsonb payload)
+* `faqs`, `templates`, `tone_configs`, `settings`, `healthchecks`
 
-Persist full audit trail (payloads, prompt, response, receipts)
+Migrations via **Alembic**.
 
-Guardrails: low temperature, snippet-only policy, safe fallback (“book a call”) if uncertain.
+---
 
-🗃️ Data Model (simplified)
-leads (email, names, source)
+## 🔍 Observability
 
-threads (subject, external thread id)
+* **/metrics** exports: `intake_total`, `dedupe_suppressed_total`, `llm_latency_ms`, `send_success_total`, `e2e_seconds` (p50/p95)
+* **Structured logs** (JSON), request ids, optional PII redaction
+* **Heartbeats** via Celery beat; alert if missed >5m
 
-messages (IN/OUT, body_text/html, provider ids)
+---
 
-outbound (channel, status, attempts, receipts, latency)
+## 🔐 Security & Privacy
 
-events (dedupe, errors, decisions; jsonb payload)
+* Bearer token on admin + webhook; serve behind TLS (proxy or gateway)
+* Never log secrets; optional PII redaction at rest (emails/phones)
+* GDPR delete by email lookup (simple admin script planned)
 
-faqs, templates, tone_configs, settings, healthchecks
+---
 
-Migrations via Alembic.
+## ☁️ Cloud-Native (no code changes; see /deploy docs)
 
-🔍 Observability
-/metrics exports: intake_total, dedupe_suppressed_total, llm_latency_ms, send_success_total, e2e_seconds (p50/p95)
+* **AWS:** API Gateway + **Lambda** (FastAPI adapter) + **RDS (Postgres/pgvector)** + **SES/SNS** + **CloudWatch**
+* **GCP:** Cloud Run + **Cloud SQL (Postgres)** + **Pub/Sub** + **Cloud Tasks** + **Cloud Monitoring**
 
-Structured logs (JSON), request ids, optional PII redaction
+---
 
-Heartbeats via Celery beat; alert if missed >5m
+## 🧪 Testing
 
-🔐 Security & Privacy
-Bearer token on admin + webhook; serve behind TLS (proxy or gateway)
+* **Unit:** dedupe, template rendering, retrieval, prompt composer
+* **Integration:** webhook→LLM→SendGrid; IMAP→retry; Twilio alerts
+* **Perf:** 100 concurrent leads, P95 < 90s E2E
+  Run tests:
 
-Never log secrets; optional PII redaction at rest (emails/phones)
-
-GDPR delete by email lookup (simple admin script planned)
-
-☁️ Cloud-Native (no code changes; see /deploy docs)
-AWS: API Gateway + Lambda (FastAPI adapter) + RDS (Postgres/pgvector) + SES/SNS + CloudWatch
-
-GCP: Cloud Run + Cloud SQL (Postgres) + Pub/Sub + Cloud Tasks + Cloud Monitoring
-
-🧪 Testing
-Unit: dedupe, template rendering, retrieval, prompt composer
-
-Integration: webhook→LLM→SendGrid; IMAP→retry; Twilio alerts
-
-Perf: 100 concurrent leads, P95 < 90s E2E
-Run tests:
-
-bash
-Copy
-Edit
+```bash
 docker compose exec api pytest -q
-🗺️ Roadmap (vNext)
-Lead scoring/routing, multi-brand support
+```
 
-Human-in-the-loop approve/edit before send
+---
 
-A/B testing for subjects & CTAs
+## 🗺️ Roadmap (vNext)
 
-Multilingual replies
+* Lead scoring/routing, multi-brand support
+* Human-in-the-loop approve/edit before send
+* A/B testing for subjects & CTAs
+* Multilingual replies
+* Live calendar holds (propose 2–3 times via API)
 
-Live calendar holds (propose 2–3 times via API)
+---
 
-🤝 Contributing
+## 🤝 Contributing
+
 PRs welcome! Please:
 
-Open an issue describing the change
+1. Open an issue describing the change
+2. Include tests and docs updates
+3. Follow conventional commit style where possible
 
-Include tests and docs updates
+---
 
-Follow conventional commit style where possible
+## 📄 License
 
-📄 License
-MIT — see LICENSE (feel free to change for your org).
+MIT — see `LICENSE` (feel free to change for your org).
+
+---
+
+## 🧭 Demo Script (for presales)
+
+1. Trigger `/v1/intake/webhook` with a pricing question
+2. Show instant **owner SMS alert**
+3. Open the **audit log** entry (request → dedupe → retrieval → prompt → send receipt)
+4. Show lead’s inbox with **on-brand reply + booking link**
+5. Edit an FAQ via admin → resend similar inquiry → observe improved answer
+6. Display `/metrics` to highlight p50/p95 and send rates
+
+---
+
+> **Tip:** Keep your top 10 FAQs sharp and specific. The better your snippets, the more confidently the bot answers—and the more calls you book.
